@@ -1,0 +1,871 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Car Guess Game</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+      background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+      min-height: 100vh;
+      color: #fff;
+      padding: 20px;
+    }
+
+    .container {
+      max-width: 800px;
+      margin: 0 auto;
+    }
+
+    header {
+      text-align: center;
+      margin-bottom: 30px;
+    }
+
+    h1 {
+      font-size: 2.5rem;
+      background: linear-gradient(90deg, #00d4ff, #7c3aed);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      margin-bottom: 10px;
+    }
+
+    .subtitle {
+      color: #a0a0a0;
+      font-size: 1rem;
+    }
+
+    /* Mode Selection */
+    .mode-select {
+      display: flex;
+      gap: 20px;
+      justify-content: center;
+      margin-bottom: 30px;
+      flex-wrap: wrap;
+    }
+
+    .mode-btn {
+      padding: 20px 40px;
+      font-size: 1.2rem;
+      border: none;
+      border-radius: 12px;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      font-weight: 600;
+    }
+
+    .mode-btn.free-play {
+      background: linear-gradient(135deg, #00d4ff, #0099cc);
+      color: #000;
+    }
+
+    .mode-btn.competition {
+      background: linear-gradient(135deg, #7c3aed, #5b21b6);
+      color: #fff;
+    }
+
+    .mode-btn:hover {
+      transform: translateY(-3px);
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+    }
+
+    /* Game Area */
+    .game-area {
+      display: none;
+    }
+
+    .game-area.active {
+      display: block;
+    }
+
+    .car-image-container {
+      position: relative;
+      width: 100%;
+      border-radius: 16px;
+      overflow: hidden;
+      margin-bottom: 20px;
+      background: #2a2a4a;
+      aspect-ratio: 16/10;
+    }
+
+    .car-image {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+
+    .source-badge {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      padding: 8px 16px;
+      background: rgba(0, 0, 0, 0.7);
+      border-radius: 20px;
+      font-size: 0.85rem;
+      color: #fff;
+    }
+
+    /* Progress */
+    .progress-bar {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 20px;
+      justify-content: center;
+    }
+
+    .progress-dot {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      background: #444;
+      transition: all 0.3s ease;
+    }
+
+    .progress-dot.current {
+      background: #00d4ff;
+      transform: scale(1.3);
+    }
+
+    .progress-dot.completed {
+      background: #10b981;
+    }
+
+    .progress-dot.wrong {
+      background: #ef4444;
+    }
+
+    /* Input Form */
+    .guess-form {
+      background: rgba(255, 255, 255, 0.05);
+      border-radius: 16px;
+      padding: 25px;
+      margin-bottom: 20px;
+    }
+
+    .input-group {
+      margin-bottom: 20px;
+    }
+
+    .input-group label {
+      display: block;
+      margin-bottom: 8px;
+      font-weight: 500;
+      color: #a0a0a0;
+    }
+
+    .input-group input {
+      width: 100%;
+      padding: 14px 18px;
+      font-size: 1rem;
+      border: 2px solid #444;
+      border-radius: 10px;
+      background: rgba(255, 255, 255, 0.1);
+      color: #fff;
+      transition: all 0.3s ease;
+    }
+
+    .input-group input:focus {
+      outline: none;
+      border-color: #00d4ff;
+      background: rgba(255, 255, 255, 0.15);
+    }
+
+    .input-group input.correct {
+      border-color: #10b981;
+      background: rgba(16, 185, 129, 0.2);
+    }
+
+    .input-group input.incorrect {
+      border-color: #ef4444;
+      background: rgba(239, 68, 68, 0.2);
+    }
+
+    .submit-btn {
+      width: 100%;
+      padding: 16px;
+      font-size: 1.1rem;
+      font-weight: 600;
+      border: none;
+      border-radius: 10px;
+      cursor: pointer;
+      background: linear-gradient(135deg, #10b981, #059669);
+      color: #fff;
+      transition: all 0.3s ease;
+    }
+
+    .submit-btn:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 25px rgba(16, 185, 129, 0.3);
+    }
+
+    .submit-btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+      transform: none;
+    }
+
+    /* Result Display */
+    .result {
+      background: rgba(255, 255, 255, 0.05);
+      border-radius: 16px;
+      padding: 25px;
+      margin-bottom: 20px;
+      display: none;
+    }
+
+    .result.show {
+      display: block;
+    }
+
+    .result h3 {
+      margin-bottom: 15px;
+      font-size: 1.3rem;
+    }
+
+    .correct-answer {
+      margin-bottom: 15px;
+      padding: 15px;
+      background: rgba(255, 255, 255, 0.05);
+      border-radius: 10px;
+    }
+
+    .correct-answer p {
+      margin-bottom: 8px;
+      color: #a0a0a0;
+    }
+
+    .correct-answer strong {
+      color: #fff;
+    }
+
+    .score-display {
+      font-size: 2rem;
+      font-weight: 700;
+      text-align: center;
+      padding: 20px;
+      background: linear-gradient(135deg, rgba(16, 185, 129, 0.2), rgba(5, 150, 105, 0.2));
+      border-radius: 12px;
+      margin-bottom: 15px;
+    }
+
+    .score-breakdown {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 10px;
+      margin-bottom: 20px;
+    }
+
+    .score-item {
+      padding: 10px;
+      background: rgba(255, 255, 255, 0.05);
+      border-radius: 8px;
+      text-align: center;
+    }
+
+    .score-item.earned {
+      background: rgba(16, 185, 129, 0.2);
+      border: 1px solid #10b981;
+    }
+
+    .score-item.missed {
+      background: rgba(239, 68, 68, 0.1);
+      border: 1px solid #ef4444;
+    }
+
+    .correct-text {
+      color: #10b981;
+      font-weight: 600;
+    }
+
+    .partial-text {
+      color: #f59e0b;
+      font-weight: 600;
+    }
+
+    .incorrect-text {
+      color: #ef4444;
+      font-weight: 600;
+    }
+
+    .score-item.partial {
+      background: rgba(245, 158, 11, 0.2);
+      border: 1px solid #f59e0b;
+    }
+
+    .next-btn, .back-btn {
+      width: 100%;
+      padding: 16px;
+      font-size: 1.1rem;
+      font-weight: 600;
+      border: none;
+      border-radius: 10px;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      margin-top: 10px;
+    }
+
+    .next-btn {
+      background: linear-gradient(135deg, #00d4ff, #0099cc);
+      color: #000;
+    }
+
+    .back-btn {
+      background: rgba(255, 255, 255, 0.1);
+      color: #fff;
+      border: 2px solid #444;
+    }
+
+    .next-btn:hover, .back-btn:hover {
+      transform: translateY(-2px);
+    }
+
+    /* Final Score */
+    .final-score {
+      text-align: center;
+      padding: 40px;
+      background: rgba(255, 255, 255, 0.05);
+      border-radius: 16px;
+    }
+
+    .final-score h2 {
+      font-size: 2rem;
+      margin-bottom: 20px;
+    }
+
+    .final-score .big-score {
+      font-size: 4rem;
+      font-weight: 700;
+      background: linear-gradient(90deg, #10b981, #00d4ff);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      margin-bottom: 10px;
+    }
+
+    .final-score .max-score {
+      color: #a0a0a0;
+      margin-bottom: 30px;
+    }
+
+    /* Loading */
+    .loading {
+      text-align: center;
+      padding: 60px;
+    }
+
+    .spinner {
+      width: 50px;
+      height: 50px;
+      border: 4px solid #444;
+      border-top-color: #00d4ff;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+      margin: 0 auto 20px;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    /* Status bar */
+    .status-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 10px 15px;
+      background: rgba(255, 255, 255, 0.05);
+      border-radius: 10px;
+      margin-bottom: 20px;
+      font-size: 0.9rem;
+    }
+
+    .status-bar .car-count {
+      color: #a0a0a0;
+    }
+
+    .status-bar .refresh-btn {
+      padding: 8px 16px;
+      font-size: 0.85rem;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      background: rgba(255, 255, 255, 0.1);
+      color: #fff;
+      transition: all 0.2s ease;
+    }
+
+    .status-bar .refresh-btn:hover {
+      background: rgba(255, 255, 255, 0.2);
+    }
+
+    /* Responsive */
+    @media (max-width: 600px) {
+      h1 {
+        font-size: 1.8rem;
+      }
+
+      .mode-btn {
+        width: 100%;
+        padding: 18px 30px;
+      }
+
+      .mode-select {
+        flex-direction: column;
+      }
+
+      .score-breakdown {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>Car Guess Game</h1>
+      <p class="subtitle">Guess the Year, Make, and Model from auction photos</p>
+    </header>
+
+    <div class="status-bar">
+      <span class="car-count">Loading cars...</span>
+      <button class="refresh-btn" onclick="refreshCars()">Refresh</button>
+    </div>
+
+    <!-- Mode Selection -->
+    <div id="modeSelect" class="mode-select">
+      <button class="mode-btn free-play" onclick="startFreePlay()">Free Play</button>
+      <button class="mode-btn competition" onclick="startCompetition()">Competition</button>
+    </div>
+
+    <!-- Free Play Area -->
+    <div id="freePlayArea" class="game-area">
+      <div class="car-image-container">
+        <img id="freePlayImage" class="car-image" src="" alt="Guess this car">
+        <span id="freePlaySource" class="source-badge"></span>
+      </div>
+
+      <form id="freePlayForm" class="guess-form" onsubmit="submitFreePlay(event)">
+        <div class="input-group">
+          <label for="freePlayYear">Year</label>
+          <input type="text" id="freePlayYear" placeholder="e.g., 1997" required pattern="\d{4}">
+        </div>
+        <div class="input-group">
+          <label for="freePlayMake">Make</label>
+          <input type="text" id="freePlayMake" placeholder="e.g., Porsche" required>
+        </div>
+        <div class="input-group">
+          <label for="freePlayModel">Model</label>
+          <input type="text" id="freePlayModel" placeholder="e.g., 911" required>
+        </div>
+        <button type="submit" class="submit-btn">Submit Guess</button>
+      </form>
+
+      <div id="freePlayResult" class="result">
+        <h3 id="freePlayResultTitle"></h3>
+        <div class="correct-answer">
+          <p>Correct Answer: <strong id="freePlayCorrectAnswer"></strong></p>
+        </div>
+        <div class="score-breakdown" id="freePlayScoreBreakdown"></div>
+        <div class="score-display" id="freePlayScoreDisplay"></div>
+        <button class="next-btn" onclick="nextFreePlay()">Next Car</button>
+        <button class="back-btn" onclick="backToMenu()">Back to Menu</button>
+      </div>
+    </div>
+
+    <!-- Competition Area -->
+    <div id="competitionArea" class="game-area">
+      <div class="progress-bar" id="progressBar"></div>
+
+      <div id="competitionGame">
+        <div class="car-image-container">
+          <img id="compImage" class="car-image" src="" alt="Guess this car">
+          <span id="compSource" class="source-badge"></span>
+        </div>
+
+        <form id="compForm" class="guess-form" onsubmit="submitCompetition(event)">
+          <div class="input-group">
+            <label for="compYear">Year</label>
+            <input type="text" id="compYear" placeholder="e.g., 1997" required pattern="\d{4}">
+          </div>
+          <div class="input-group">
+            <label for="compMake">Make</label>
+            <input type="text" id="compMake" placeholder="e.g., Porsche" required>
+          </div>
+          <div class="input-group">
+            <label for="compModel">Model</label>
+            <input type="text" id="compModel" placeholder="e.g., 911" required>
+          </div>
+          <button type="submit" class="submit-btn">Submit Guess</button>
+        </form>
+
+        <div id="compResult" class="result">
+          <h3 id="compResultTitle"></h3>
+          <div class="correct-answer">
+            <p>Correct Answer: <strong id="compCorrectAnswer"></strong></p>
+          </div>
+          <div class="score-breakdown" id="compScoreBreakdown"></div>
+          <div class="score-display" id="compScoreDisplay"></div>
+          <button class="next-btn" id="compNextBtn" onclick="nextCompetition()">Next Car</button>
+        </div>
+      </div>
+
+      <div id="finalScore" class="final-score" style="display: none;">
+        <h2>Competition Complete!</h2>
+        <div class="big-score" id="totalScore"></div>
+        <div class="max-score">out of 1,100 points</div>
+        <button class="next-btn" onclick="startCompetition()">Play Again</button>
+        <button class="back-btn" onclick="backToMenu()">Back to Menu</button>
+      </div>
+
+      <div id="compLoading" class="loading" style="display: none;">
+        <div class="spinner"></div>
+        <p>Loading competition cars...</p>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // Game state
+    let currentCar = null;
+    let competitionCars = [];
+    let currentCompIndex = 0;
+    let competitionScore = 0;
+    let competitionAnswers = [];
+
+    // Initialize
+    document.addEventListener('DOMContentLoaded', () => {
+      updateStatus();
+    });
+
+    // Update car count status
+    async function updateStatus() {
+      try {
+        const response = await fetch('/api/status');
+        const data = await response.json();
+        document.querySelector('.car-count').textContent =
+          `${data.totalCars} cars loaded from BaT (${data.bringATrailerCount}) & C&B (${data.carsAndBidsCount})`;
+      } catch (error) {
+        document.querySelector('.car-count').textContent = 'Error loading status';
+      }
+    }
+
+    // Refresh cars
+    async function refreshCars() {
+      const btn = document.querySelector('.refresh-btn');
+      btn.textContent = 'Refreshing...';
+      btn.disabled = true;
+
+      try {
+        await fetch('/api/refresh', { method: 'POST' });
+        await updateStatus();
+      } catch (error) {
+        console.error('Error refreshing:', error);
+      }
+
+      btn.textContent = 'Refresh';
+      btn.disabled = false;
+    }
+
+    // Back to menu
+    function backToMenu() {
+      document.getElementById('freePlayArea').classList.remove('active');
+      document.getElementById('competitionArea').classList.remove('active');
+      document.getElementById('modeSelect').style.display = 'flex';
+    }
+
+    // ============ FREE PLAY ============
+
+    async function startFreePlay() {
+      document.getElementById('modeSelect').style.display = 'none';
+      document.getElementById('freePlayArea').classList.add('active');
+      await loadRandomCar();
+    }
+
+    async function loadRandomCar() {
+      try {
+        const response = await fetch('/api/random-car');
+        currentCar = await response.json();
+
+        document.getElementById('freePlayImage').src = currentCar.imageUrl;
+        document.getElementById('freePlaySource').textContent = currentCar.source;
+
+        // Reset form
+        document.getElementById('freePlayForm').reset();
+        document.getElementById('freePlayResult').classList.remove('show');
+        document.getElementById('freePlayForm').style.display = 'block';
+
+        // Clear input styling
+        ['freePlayYear', 'freePlayMake', 'freePlayModel'].forEach(id => {
+          document.getElementById(id).className = '';
+        });
+      } catch (error) {
+        alert('Error loading car. Please try again.');
+        backToMenu();
+      }
+    }
+
+    async function submitFreePlay(event) {
+      event.preventDefault();
+
+      const year = document.getElementById('freePlayYear').value;
+      const make = document.getElementById('freePlayMake').value;
+      const model = document.getElementById('freePlayModel').value;
+
+      try {
+        const response = await fetch('/api/check-answer', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            carId: currentCar.id,
+            year, make, model
+          })
+        });
+
+        const result = await response.json();
+
+        // Check for server errors
+        if (!response.ok || result.error) {
+          console.error('Server error:', result);
+          // Show a fallback result if car not found (cache refreshed)
+          alert('Car data refreshed. Loading a new car...');
+          loadRandomCar();
+          return;
+        }
+
+        showFreePlayResult(result, { year, make, model });
+      } catch (error) {
+        console.error('Fetch error:', error);
+        alert('Error checking answer. Please try again.');
+      }
+    }
+
+    function showFreePlayResult(result, guess) {
+      const allCorrect = result.yearCorrect && result.makeCorrect && result.modelCorrect;
+
+      // Update input styling
+      document.getElementById('freePlayYear').className = result.yearCorrect ? 'correct' : 'incorrect';
+      document.getElementById('freePlayMake').className = result.makeCorrect ? 'correct' : 'incorrect';
+      document.getElementById('freePlayModel').className = result.modelCorrect ? 'correct' : 'incorrect';
+
+      // Show result
+      document.getElementById('freePlayForm').style.display = 'none';
+      document.getElementById('freePlayResult').classList.add('show');
+
+      document.getElementById('freePlayResultTitle').textContent = allCorrect ? 'Perfect!' : 'Results';
+      document.getElementById('freePlayCorrectAnswer').innerHTML = `
+        <div style="display: grid; grid-template-columns: auto 1fr 1fr; gap: 8px; text-align: left;">
+          <span></span><span style="color: #a0a0a0; font-size: 0.85rem;">Your Guess</span><span style="color: #a0a0a0; font-size: 0.85rem;">Correct</span>
+          <span style="color: #a0a0a0;">Year:</span>
+          <span class="${result.yearCorrect ? 'correct-text' : result.yearPoints > 0 ? 'partial-text' : 'incorrect-text'}">${guess.year}${result.yearDiff > 0 ? ` (${result.yearDiff} off)` : ''}</span>
+          <span>${result.correctAnswer.year}</span>
+          <span style="color: #a0a0a0;">Make:</span>
+          <span class="${result.makeCorrect ? 'correct-text' : 'incorrect-text'}">${guess.make}</span>
+          <span>${result.correctAnswer.make}</span>
+          <span style="color: #a0a0a0;">Model:</span>
+          <span class="${result.modelCorrect ? 'correct-text' : 'incorrect-text'}">${guess.model}</span>
+          <span>${result.correctAnswer.model}</span>
+        </div>
+      `;
+
+      // Score breakdown - year now shows actual points based on distance
+      const yearLabel = result.yearCorrect ? 'Exact!' : result.yearPoints > 0 ? `${result.yearDiff} off` : `${result.yearDiff}+ off`;
+      const breakdown = document.getElementById('freePlayScoreBreakdown');
+      breakdown.innerHTML = `
+        <div class="score-item ${result.makeCorrect ? 'earned' : 'missed'}">
+          Make: ${result.makeCorrect ? '+10' : '0'}
+        </div>
+        <div class="score-item ${result.yearPoints > 0 ? (result.yearCorrect ? 'earned' : 'partial') : 'missed'}">
+          Year (${yearLabel}): +${result.yearPoints}
+        </div>
+        <div class="score-item ${result.modelCorrect ? 'earned' : 'missed'}">
+          Model: ${result.modelCorrect ? '+50' : '0'}
+        </div>
+        <div class="score-item ${allCorrect ? 'earned' : 'missed'}">
+          Bonus: ${allCorrect ? '+25' : '0'}
+        </div>
+      `;
+
+      document.getElementById('freePlayScoreDisplay').textContent = `${result.score} points`;
+    }
+
+    function nextFreePlay() {
+      loadRandomCar();
+    }
+
+    // ============ COMPETITION ============
+
+    async function startCompetition() {
+      document.getElementById('modeSelect').style.display = 'none';
+      document.getElementById('competitionArea').classList.add('active');
+      document.getElementById('competitionGame').style.display = 'none';
+      document.getElementById('finalScore').style.display = 'none';
+      document.getElementById('compLoading').style.display = 'block';
+
+      // Reset state
+      competitionCars = [];
+      currentCompIndex = 0;
+      competitionScore = 0;
+      competitionAnswers = [];
+
+      try {
+        const response = await fetch('/api/competition-cars');
+        competitionCars = await response.json();
+
+        // Create progress dots
+        const progressBar = document.getElementById('progressBar');
+        progressBar.innerHTML = competitionCars.map((_, i) =>
+          `<div class="progress-dot" id="dot-${i}"></div>`
+        ).join('');
+
+        document.getElementById('compLoading').style.display = 'none';
+        document.getElementById('competitionGame').style.display = 'block';
+
+        loadCompetitionCar();
+      } catch (error) {
+        alert('Error loading competition. Please try again.');
+        backToMenu();
+      }
+    }
+
+    function loadCompetitionCar() {
+      const car = competitionCars[currentCompIndex];
+
+      document.getElementById('compImage').src = car.imageUrl;
+      document.getElementById('compSource').textContent = car.source;
+
+      // Update progress
+      document.getElementById(`dot-${currentCompIndex}`).classList.add('current');
+
+      // Reset form
+      document.getElementById('compForm').reset();
+      document.getElementById('compResult').classList.remove('show');
+      document.getElementById('compForm').style.display = 'block';
+
+      // Clear input styling
+      ['compYear', 'compMake', 'compModel'].forEach(id => {
+        document.getElementById(id).className = '';
+      });
+
+      // Update next button text
+      const nextBtn = document.getElementById('compNextBtn');
+      nextBtn.textContent = currentCompIndex === 9 ? 'See Final Score' : 'Next Car';
+    }
+
+    async function submitCompetition(event) {
+      event.preventDefault();
+
+      const year = document.getElementById('compYear').value;
+      const make = document.getElementById('compMake').value;
+      const model = document.getElementById('compModel').value;
+
+      try {
+        const response = await fetch('/api/check-answer', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            carId: competitionCars[currentCompIndex].id,
+            year, make, model
+          })
+        });
+
+        const result = await response.json();
+
+        // Check for server errors
+        if (!response.ok || result.error) {
+          console.error('Server error:', result);
+          alert('Car data refreshed mid-game. Restarting competition...');
+          startCompetition();
+          return;
+        }
+
+        competitionAnswers.push(result);
+        competitionScore += result.score;
+
+        showCompetitionResult(result, { year, make, model });
+      } catch (error) {
+        console.error('Fetch error:', error);
+        alert('Error checking answer. Please try again.');
+      }
+    }
+
+    function showCompetitionResult(result, guess) {
+      const allCorrect = result.yearCorrect && result.makeCorrect && result.modelCorrect;
+
+      // Update input styling
+      document.getElementById('compYear').className = result.yearCorrect ? 'correct' : 'incorrect';
+      document.getElementById('compMake').className = result.makeCorrect ? 'correct' : 'incorrect';
+      document.getElementById('compModel').className = result.modelCorrect ? 'correct' : 'incorrect';
+
+      // Update progress dot
+      const dot = document.getElementById(`dot-${currentCompIndex}`);
+      dot.classList.remove('current');
+      dot.classList.add(allCorrect ? 'completed' : 'wrong');
+
+      // Show result
+      document.getElementById('compForm').style.display = 'none';
+      document.getElementById('compResult').classList.add('show');
+
+      document.getElementById('compResultTitle').textContent = allCorrect ? 'Perfect!' : 'Results';
+      document.getElementById('compCorrectAnswer').innerHTML = `
+        <div style="display: grid; grid-template-columns: auto 1fr 1fr; gap: 8px; text-align: left;">
+          <span></span><span style="color: #a0a0a0; font-size: 0.85rem;">Your Guess</span><span style="color: #a0a0a0; font-size: 0.85rem;">Correct</span>
+          <span style="color: #a0a0a0;">Year:</span>
+          <span class="${result.yearCorrect ? 'correct-text' : result.yearPoints > 0 ? 'partial-text' : 'incorrect-text'}">${guess.year}${result.yearDiff > 0 ? ` (${result.yearDiff} off)` : ''}</span>
+          <span>${result.correctAnswer.year}</span>
+          <span style="color: #a0a0a0;">Make:</span>
+          <span class="${result.makeCorrect ? 'correct-text' : 'incorrect-text'}">${guess.make}</span>
+          <span>${result.correctAnswer.make}</span>
+          <span style="color: #a0a0a0;">Model:</span>
+          <span class="${result.modelCorrect ? 'correct-text' : 'incorrect-text'}">${guess.model}</span>
+          <span>${result.correctAnswer.model}</span>
+        </div>
+      `;
+
+      // Score breakdown - year now shows actual points based on distance
+      const yearLabel = result.yearCorrect ? 'Exact!' : result.yearPoints > 0 ? `${result.yearDiff} off` : `${result.yearDiff}+ off`;
+      const breakdown = document.getElementById('compScoreBreakdown');
+      breakdown.innerHTML = `
+        <div class="score-item ${result.makeCorrect ? 'earned' : 'missed'}">
+          Make: ${result.makeCorrect ? '+10' : '0'}
+        </div>
+        <div class="score-item ${result.yearPoints > 0 ? (result.yearCorrect ? 'earned' : 'partial') : 'missed'}">
+          Year (${yearLabel}): +${result.yearPoints}
+        </div>
+        <div class="score-item ${result.modelCorrect ? 'earned' : 'missed'}">
+          Model: ${result.modelCorrect ? '+50' : '0'}
+        </div>
+        <div class="score-item ${allCorrect ? 'earned' : 'missed'}">
+          Bonus: ${allCorrect ? '+25' : '0'}
+        </div>
+      `;
+
+      document.getElementById('compScoreDisplay').textContent =
+        `${result.score} points (Total: ${competitionScore})`;
+    }
+
+    function nextCompetition() {
+      currentCompIndex++;
+
+      if (currentCompIndex >= 10) {
+        showFinalScore();
+      } else {
+        loadCompetitionCar();
+      }
+    }
+
+    function showFinalScore() {
+      document.getElementById('competitionGame').style.display = 'none';
+      document.getElementById('finalScore').style.display = 'block';
+      document.getElementById('totalScore').textContent = competitionScore;
+    }
+  </script>
+</body>
+</html>

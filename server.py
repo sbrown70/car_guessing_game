@@ -1,0 +1,525 @@
+#!/usr/bin/env python3
+"""
+Car Guess Game - Backend Server
+Serves car data from Bring A Trailer and Cars And Bids auctions
+"""
+
+import json
+import re
+import random
+import os
+from datetime import datetime
+from http.server import HTTPServer, SimpleHTTPRequestHandler
+from urllib.request import urlopen, Request
+from urllib.parse import parse_qs, urlparse
+from urllib.error import URLError, HTTPError
+import threading
+import time
+
+PORT = int(os.environ.get('PORT', 3000))
+
+# Cache for scraped car data
+car_cache = {
+    'bring_a_trailer': [],
+    'cars_and_bids': [],
+    'last_updated': None
+}
+
+# Browser headers
+BROWSER_HEADERS = {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+    'Accept-Language': 'en-US,en;q=0.5',
+}
+
+# Known car makes for parsing
+KNOWN_MAKES = [
+    'Acura', 'Alfa Romeo', 'Aston Martin', 'Audi', 'Bentley', 'BMW', 'Bugatti',
+    'Buick', 'Cadillac', 'Chevrolet', 'Chevy', 'Chrysler', 'Citroën', 'Datsun',
+    'De Tomaso', 'Dodge', 'Ferrari', 'Fiat', 'Ford', 'Genesis', 'GMC', 'Honda',
+    'Hummer', 'Hyundai', 'Infiniti', 'Jaguar', 'Jeep', 'Kia', 'Lamborghini',
+    'Land Rover', 'Lexus', 'Lincoln', 'Lotus', 'Maserati', 'Mazda', 'McLaren',
+    'Mercedes-Benz', 'Mercedes', 'Mercury', 'Mini', 'Mitsubishi', 'Nissan',
+    'Oldsmobile', 'Pagani', 'Peugeot', 'Plymouth', 'Pontiac', 'Porsche', 'Ram',
+    'Renault', 'Rolls-Royce', 'Saab', 'Saturn', 'Scion', 'Subaru', 'Suzuki',
+    'Tesla', 'Toyota', 'Triumph', 'Volkswagen', 'VW', 'Volvo', 'AMC',
+    'American Motors', 'Austin-Healey', 'DeLorean', 'DeTomaso', 'Hudson',
+    'International', 'Kaiser', 'Nash', 'Packard', 'Shelby', 'Studebaker',
+    'Willys', 'MG', 'TVR', 'Lancia', 'Opel', 'Vauxhall', 'Seat', 'Skoda'
+]
+
+
+def parse_car_title(title):
+    """Parse year, make, model from a car title."""
+    cleaned = ' '.join(title.split())
+    year_match = re.match(r'^(\d{4})\s+', cleaned)
+
+    if not year_match:
+        return None
+
+    year = year_match.group(1)
+    rest = cleaned[len(year_match.group(0)):]
+
+    # Find make
+    make = None
+    model_start = 0
+
+    for known_make in KNOWN_MAKES:
+        if rest.lower().startswith(known_make.lower()):
+            make = known_make
+            model_start = len(known_make)
+            break
+
+    if not make:
+        first_space = rest.find(' ')
+        if first_space > 0:
+            make = rest[:first_space]
+            model_start = first_space
+        else:
+            make = rest
+            model_start = len(rest)
+
+    # Get model
+    model_part = rest[model_start:].strip()
+
+    # Remove common suffixes
+    suffix_patterns = [
+        r'\s+\d+-Speed$',
+        r'\s+Manual$',
+        r'\s+Automatic$',
+        r'\s+Auto$',
+        r'\s+Coupe$',
+        r'\s+Sedan$',
+        r'\s+Convertible$',
+        r'\s+Wagon$',
+        r'\s+Hatchback$',
+        r'\s+SUV$',
+        r'\s+Roadster$',
+        r'\s+Cabriolet$',
+        r'\s+Targa$',
+        r'\s+Spyder$',
+        r'\s+Spider$',
+    ]
+
+    for pattern in suffix_patterns:
+        model_part = re.sub(pattern, '', model_part, flags=re.IGNORECASE)
+
+    # Take first 2-3 words as model
+    model_words = [w for w in model_part.split() if w]
+    model = ' '.join(model_words[:3]).strip()
+
+    if not model:
+        model = model_words[0] if model_words else 'Unknown'
+
+    return {'year': year, 'make': make, 'model': model}
+
+
+def scrape_bring_a_trailer():
+    """Scrape car data from Bring A Trailer."""
+    try:
+        print('Scraping Bring A Trailer...')
+        req = Request('https://bringatrailer.com/auctions/results/', headers=BROWSER_HEADERS)
+        with urlopen(req, timeout=30) as response:
+            html = response.read().decode('utf-8')
+
+        # Extract auctionsCompletedInitialData - find the start and then parse JSON properly
+        marker = 'auctionsCompletedInitialData = '
+        start_idx = html.find(marker)
+
+        if start_idx == -1:
+            print('Could not find BaT data marker in page')
+            return []
+
+        # Find the JSON object by tracking braces
+        json_start = start_idx + len(marker)
+        brace_count = 0
+        json_end = json_start
+
+        for i, char in enumerate(html[json_start:]):
+            if char == '{':
+                brace_count += 1
+            elif char == '}':
+                brace_count -= 1
+                if brace_count == 0:
+                    json_end = json_start + i + 1
+                    break
+
+        json_str = html[json_start:json_end]
+
+        try:
+            data = json.loads(json_str)
+        except json.JSONDecodeError as e:
+            print(f'JSON parse error: {e}')
+            # Try to extract just the items array
+            items_match = re.search(r'"items"\s*:\s*(\[[\s\S]*?\])\s*[,}]', json_str)
+            if items_match:
+                data = {'items': json.loads(items_match.group(1))}
+            else:
+                return []
+
+        listings = data.get('items', [])
+
+        cars = []
+        for item in listings:
+            title = item.get('title', '')
+            parsed = parse_car_title(title)
+
+            if parsed and item.get('thumbnail_url'):
+                image_url = re.sub(r'\?resize=\d+%2C\d+', '?resize=800%2C600', item['thumbnail_url'])
+                # Use stable ID based on BaT's own ID
+                bat_id = item.get('id', '') or str(hash(title))[:8]
+                cars.append({
+                    'id': f"bat-{bat_id}",
+                    'source': 'Bring A Trailer',
+                    'title': title,
+                    'year': parsed['year'],
+                    'make': parsed['make'],
+                    'model': parsed['model'],
+                    'imageUrl': image_url,
+                    'auctionUrl': item.get('url', '')
+                })
+
+        print(f'Found {len(cars)} cars from Bring A Trailer')
+        return cars
+
+    except Exception as e:
+        print(f'Error scraping BaT: {e}')
+        return []
+
+
+def scrape_cars_and_bids():
+    """Scrape car data from Cars And Bids API."""
+    try:
+        print('Scraping Cars And Bids...')
+
+        # Try their GraphQL/API endpoint
+        api_headers = {
+            **BROWSER_HEADERS,
+            'Accept': 'application/json',
+            'Content-Type': 'application/json',
+            'Origin': 'https://carsandbids.com',
+            'Referer': 'https://carsandbids.com/past-auctions/',
+        }
+
+        # Try the search API
+        api_url = 'https://carsandbids.com/api/auctions?status=ended&limit=50'
+        req = Request(api_url, headers=api_headers)
+
+        cars = []
+        try:
+            with urlopen(req, timeout=30) as response:
+                data = json.loads(response.read().decode('utf-8'))
+
+            auctions = data if isinstance(data, list) else data.get('auctions', []) or data.get('items', []) or data.get('data', [])
+
+            for item in auctions:
+                title = item.get('title', '') or item.get('name', '') or ''
+                parsed = parse_car_title(title)
+
+                # Get image URL
+                image = ''
+                if item.get('primaryPhotoUrl'):
+                    image = item['primaryPhotoUrl']
+                elif item.get('image'):
+                    image = item['image']
+                elif item.get('photos') and len(item['photos']) > 0:
+                    image = item['photos'][0].get('url', '')
+                elif item.get('imageUrl'):
+                    image = item['imageUrl']
+
+                if parsed and image:
+                    slug = item.get('slug', '') or item.get('id', '')
+                    cars.append({
+                        'id': f"cab-{slug}",
+                        'source': 'Cars And Bids',
+                        'title': title,
+                        'year': parsed['year'],
+                        'make': parsed['make'],
+                        'model': parsed['model'],
+                        'imageUrl': image,
+                        'auctionUrl': f"https://carsandbids.com/auctions/{slug}"
+                    })
+        except Exception as e:
+            print(f'API request failed: {e}')
+
+        # If API fails, try HTML scraping as fallback
+        if not cars:
+            try:
+                html_headers = {
+                    **BROWSER_HEADERS,
+                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                }
+                req = Request('https://carsandbids.com/past-auctions/', headers=html_headers)
+                with urlopen(req, timeout=30) as response:
+                    html = response.read().decode('utf-8')
+
+                # Look for JSON data in script tags
+                script_pattern = re.compile(r'<script[^>]*>([\s\S]*?)</script>')
+                for match in script_pattern.finditer(html):
+                    script = match.group(1)
+                    if '"auctions"' in script or '"title"' in script:
+                        # Try to find JSON arrays
+                        try:
+                            array_match = re.search(r'\[[\s\S]*?"title"\s*:\s*"[^"]+[\s\S]*?\]', script)
+                            if array_match:
+                                items = json.loads(array_match.group(0))
+                                for item in items:
+                                    title = item.get('title', '')
+                                    image = item.get('image', '') or item.get('primaryPhotoUrl', '')
+                                    parsed = parse_car_title(title)
+                                    if parsed and image:
+                                        cars.append({
+                                            'id': f"cab-{hash(title) % 100000}",
+                                            'source': 'Cars And Bids',
+                                            'title': title,
+                                            'year': parsed['year'],
+                                            'make': parsed['make'],
+                                            'model': parsed['model'],
+                                            'imageUrl': image,
+                                            'auctionUrl': ''
+                                        })
+                        except:
+                            pass
+            except Exception as e:
+                print(f'HTML scraping failed: {e}')
+
+        print(f'Found {len(cars)} cars from Cars And Bids')
+        return cars
+
+    except Exception as e:
+        print(f'Error scraping C&B: {e}')
+        return []
+
+
+def refresh_cache():
+    """Refresh the car cache."""
+    print('Refreshing car cache...')
+    global car_cache
+
+    bat_cars = scrape_bring_a_trailer()
+    cab_cars = scrape_cars_and_bids()
+
+    car_cache['bring_a_trailer'] = bat_cars
+    car_cache['cars_and_bids'] = cab_cars
+    car_cache['last_updated'] = datetime.now().isoformat()
+
+    print(f'Cache refreshed: {len(bat_cars)} BaT, {len(cab_cars)} C&B cars')
+
+
+def get_all_cars():
+    """Get all cars from cache."""
+    return car_cache['bring_a_trailer'] + car_cache['cars_and_bids']
+
+
+def get_random_car():
+    """Get a random car."""
+    all_cars = get_all_cars()
+    if not all_cars:
+        return None
+    return random.choice(all_cars)
+
+
+def get_competition_cars(count=10):
+    """Get unique cars for competition (no duplicate make+model)."""
+    all_cars = get_all_cars()
+    if len(all_cars) < count:
+        return all_cars
+
+    selected = []
+    used_make_models = set()
+    shuffled = all_cars.copy()
+    random.shuffle(shuffled)
+
+    for car in shuffled:
+        key = f"{car['make'].lower()}-{car['model'].lower()}"
+        if key not in used_make_models:
+            used_make_models.add(key)
+            selected.append(car)
+            if len(selected) >= count:
+                break
+
+    return selected
+
+
+def normalize_string(s):
+    """Normalize string for comparison."""
+    return re.sub(r'[-\s]+', ' ', s.lower().strip())
+
+
+class GameHandler(SimpleHTTPRequestHandler):
+    """HTTP request handler for the game."""
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, directory=os.path.join(os.path.dirname(__file__), 'public'), **kwargs)
+
+    def do_GET(self):
+        """Handle GET requests."""
+        parsed = urlparse(self.path)
+        path = parsed.path
+
+        if path == '/api/random-car':
+            car = get_random_car()
+            if not car:
+                self.send_json({'error': 'No cars available. Please try again later.'}, 503)
+            else:
+                self.send_json({
+                    'id': car['id'],
+                    'imageUrl': car['imageUrl'],
+                    'source': car['source']
+                })
+
+        elif path == '/api/competition-cars':
+            cars = get_competition_cars(10)
+            if len(cars) < 10:
+                self.send_json({'error': 'Not enough cars available. Please try again later.'}, 503)
+            else:
+                self.send_json([{
+                    'id': c['id'],
+                    'imageUrl': c['imageUrl'],
+                    'source': c['source']
+                } for c in cars])
+
+        elif path == '/api/status':
+            self.send_json({
+                'bringATrailerCount': len(car_cache['bring_a_trailer']),
+                'carsAndBidsCount': len(car_cache['cars_and_bids']),
+                'totalCars': len(get_all_cars()),
+                'lastUpdated': car_cache['last_updated']
+            })
+
+        else:
+            # Serve static files
+            if path == '/':
+                self.path = '/index.html'
+            super().do_GET()
+
+    def do_POST(self):
+        """Handle POST requests."""
+        parsed = urlparse(self.path)
+        path = parsed.path
+
+        if path == '/api/check-answer':
+            content_length = int(self.headers['Content-Length'])
+            post_data = self.rfile.read(content_length)
+            data = json.loads(post_data.decode('utf-8'))
+
+            car_id = data.get('carId')
+            year = data.get('year', '')
+            make = data.get('make', '')
+            model = data.get('model', '')
+
+            all_cars = get_all_cars()
+            car = next((c for c in all_cars if c['id'] == car_id), None)
+
+            if not car:
+                self.send_json({'error': 'Car not found'}, 404)
+                return
+
+            # Calculate year difference and points (exponential decay)
+            try:
+                year_diff = abs(int(year) - int(car['year']))
+            except (ValueError, TypeError):
+                year_diff = 99  # Invalid year input
+
+            year_exact = year_diff == 0
+            # Exponential decay: exact=25, ±1=15, ±2=5, ±3+=0
+            year_points_map = {0: 25, 1: 15, 2: 5}
+            year_points = year_points_map.get(year_diff, 0)
+
+            make_correct = normalize_string(make) == normalize_string(car['make'])
+
+            user_model = normalize_string(model)
+            correct_model = normalize_string(car['model'])
+            model_correct = (user_model == correct_model or
+                           correct_model in user_model or
+                           user_model in correct_model)
+
+            # Calculate score
+            score = 0
+            if make_correct:
+                score += 10
+            score += year_points  # 0-25 based on distance
+            if model_correct:
+                score += 50
+            # Bonus only for perfect answers (year must be exact)
+            if make_correct and year_exact and model_correct:
+                score += 25
+
+            self.send_json({
+                'yearCorrect': year_exact,  # True only if exact match
+                'yearDiff': year_diff,
+                'yearPoints': year_points,
+                'makeCorrect': make_correct,
+                'modelCorrect': model_correct,
+                'score': score,
+                'correctAnswer': {
+                    'year': car['year'],
+                    'make': car['make'],
+                    'model': car['model'],
+                    'title': car['title'],
+                    'auctionUrl': car['auctionUrl']
+                }
+            })
+
+        elif path == '/api/refresh':
+            refresh_cache()
+            self.send_json({
+                'success': True,
+                'totalCars': len(get_all_cars()),
+                'lastUpdated': car_cache['last_updated']
+            })
+
+        else:
+            self.send_error(404)
+
+    def send_json(self, data, status=200):
+        """Send JSON response."""
+        self.send_response(status)
+        self.send_header('Content-Type', 'application/json')
+        self.send_header('Access-Control-Allow-Origin', '*')
+        self.end_headers()
+        self.wfile.write(json.dumps(data).encode('utf-8'))
+
+    def do_OPTIONS(self):
+        """Handle CORS preflight."""
+        self.send_response(200)
+        self.send_header('Access-Control-Allow-Origin', '*')
+        self.send_header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
+        self.send_header('Access-Control-Allow-Headers', 'Content-Type')
+        self.end_headers()
+
+    def log_message(self, format, *args):
+        """Custom log format."""
+        if '/api/' in args[0]:
+            print(f"[{datetime.now().strftime('%H:%M:%S')}] {args[0]}")
+
+
+def cache_refresh_thread():
+    """Background thread to refresh cache periodically."""
+    while True:
+        time.sleep(30 * 60)  # 30 minutes
+        refresh_cache()
+
+
+if __name__ == '__main__':
+    print('=' * 50)
+    print('Car Guess Game Server')
+    print('=' * 50)
+
+    # Initial cache refresh
+    refresh_cache()
+
+    # Start background refresh thread
+    thread = threading.Thread(target=cache_refresh_thread, daemon=True)
+    thread.start()
+
+    # Start server
+    server = HTTPServer(('0.0.0.0', PORT), GameHandler)
+    print(f'\nServer running at http://localhost:{PORT}')
+    print('Press Ctrl+C to stop\n')
+
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        print('\nShutting down...')
+        server.shutdown()
