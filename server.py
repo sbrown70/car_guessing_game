@@ -513,9 +513,9 @@ def refresh_cache():
 
     # Load cars from BaT using Playwright for more results
     if PLAYWRIGHT_AVAILABLE:
-        bat_cars = scrape_bat_with_playwright(target_cars=500)
+        bat_cars = scrape_bat_with_playwright(target_cars=1000)
     else:
-        bat_cars = scrape_bring_a_trailer(max_cars=500)
+        bat_cars = scrape_bring_a_trailer(max_cars=1000)
     cab_cars = scrape_cars_and_bids()
 
     car_cache['bring_a_trailer'] = bat_cars

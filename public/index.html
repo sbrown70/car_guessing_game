@@ -212,6 +212,26 @@
       transform: none;
     }
 
+    .skip-btn {
+      width: 100%;
+      padding: 14px;
+      font-size: 1rem;
+      font-weight: 600;
+      border: 2px solid #666;
+      border-radius: 10px;
+      cursor: pointer;
+      background: transparent;
+      color: #a0a0a0;
+      transition: all 0.3s ease;
+      margin-top: 10px;
+    }
+
+    .skip-btn:hover {
+      border-color: #00d4ff;
+      color: #00d4ff;
+      background: rgba(0, 212, 255, 0.1);
+    }
+
     /* Result Display */
     .result {
       background: rgba(255, 255, 255, 0.05);
@@ -581,6 +601,7 @@
           <input type="text" id="freePlayModel" placeholder="e.g., 911" required>
         </div>
         <button type="submit" class="submit-btn">Submit Guess</button>
+        <button type="button" class="skip-btn" onclick="skipFreePlay()">Skip Car</button>
       </form>
 
       <div id="freePlayResult" class="result">
@@ -812,6 +833,10 @@
     }
 
     function nextFreePlay() {
+      loadRandomCar();
+    }
+
+    function skipFreePlay() {
       loadRandomCar();
     }
 
