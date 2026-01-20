@@ -1,3 +1,4 @@
-# No external dependencies required!
-# The game uses only Python standard library.
-# This file is for cloud deployment platforms that expect it.
+# Car Guess Game dependencies
+playwright>=1.40.0  # For browser automation to load more cars
+
+# Note: After installing, run: playwright install chromium

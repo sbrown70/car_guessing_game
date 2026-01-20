@@ -1,5 +1,14 @@
+# Debug files
+bat_debug.png
+test_playwright*.py
+
+# Python
 __pycache__/
 *.pyc
+*.pyo
 .env
-node_modules/
+
+# IDE
+.vscode/
+.idea/
 tmpclaude-*

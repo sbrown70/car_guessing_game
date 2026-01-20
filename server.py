@@ -16,6 +16,14 @@ from urllib.error import URLError, HTTPError
 import threading
 import time
 
+# Try to import Playwright for browser automation
+try:
+    from playwright.sync_api import sync_playwright
+    PLAYWRIGHT_AVAILABLE = True
+except ImportError:
+    PLAYWRIGHT_AVAILABLE = False
+    print("Playwright not available - using basic scraping (limited cars)")
+
 PORT = int(os.environ.get('PORT', 3000))
 
 # Cache for scraped car data
@@ -47,6 +55,41 @@ KNOWN_MAKES = [
     'International', 'Kaiser', 'Nash', 'Packard', 'Shelby', 'Studebaker',
     'Willys', 'MG', 'TVR', 'Lancia', 'Opel', 'Vauxhall', 'Seat', 'Skoda'
 ]
+
+# Motorcycle-only makes (always filter these out)
+MOTORCYCLE_MAKES = [
+    'Harley-Davidson', 'Harley Davidson', 'Harley', 'Ducati', 'Kawasaki',
+    'Yamaha', 'Suzuki', 'Indian', 'Moto Guzzi', 'Aprilia', 'KTM', 'MV Agusta',
+    'Norton', 'BSA', 'Royal Enfield', 'Husqvarna', 'Benelli', 'Bimota',
+    'Buell', 'Victory', 'Can-Am', 'Ural', 'Zero', 'Confederate', 'Arch'
+]
+
+# Keywords that indicate a motorcycle (in title)
+MOTORCYCLE_KEYWORDS = ['motorcycle', 'motorbike', 'bike', 'scooter', 'moped']
+
+
+def is_motorcycle(title, make=None):
+    """Check if a listing is a motorcycle (should be filtered out)."""
+    title_lower = title.lower()
+
+    # Check for motorcycle keywords in title
+    for keyword in MOTORCYCLE_KEYWORDS:
+        if keyword in title_lower:
+            return True
+
+    # Check if make is a motorcycle-only brand
+    if make:
+        make_lower = make.lower()
+        for moto_make in MOTORCYCLE_MAKES:
+            if moto_make.lower() == make_lower or moto_make.lower() in make_lower:
+                return True
+
+    # Also check title for motorcycle makes
+    for moto_make in MOTORCYCLE_MAKES:
+        if moto_make.lower() in title_lower:
+            return True
+
+    return False
 
 
 def parse_car_title(title):
@@ -219,6 +262,10 @@ def parse_bat_listing_item(item):
     if not parsed or not item.get('thumbnail_url'):
         return None
 
+    # Filter out motorcycles
+    if is_motorcycle(title, parsed.get('make')):
+        return None
+
     image_url = re.sub(r'\?resize=\d+%2C\d+', '?resize=800%2C600', item['thumbnail_url'])
     bat_id = item.get('id', '') or str(hash(title))[:8]
 
@@ -232,6 +279,127 @@ def parse_bat_listing_item(item):
         'imageUrl': image_url,
         'auctionUrl': item.get('url', '')
     }
+
+
+def scrape_bat_with_playwright(target_cars=500):
+    """Scrape BaT using Playwright browser automation for more cars.
+
+    Args:
+        target_cars: Target number of cars to collect
+    """
+    if not PLAYWRIGHT_AVAILABLE:
+        print("Playwright not available, falling back to basic scraping")
+        return scrape_bring_a_trailer()
+
+    print(f'Scraping Bring A Trailer with Playwright (target: {target_cars} cars)...')
+    all_cars = []
+    seen_ids = set()
+
+    def extract_listings_from_dom(page):
+        """Extract listing data directly from DOM elements."""
+        return page.evaluate('''() => {
+            const items = [];
+            const links = document.querySelectorAll('a[href*="/listing/"]');
+            const seen = new Set();
+
+            links.forEach(link => {
+                const href = link.href;
+                if (seen.has(href)) return;
+                seen.add(href);
+
+                // Get title from h3 or title class
+                const titleEl = link.querySelector('h3, .title, [class*="title"]');
+                let title = titleEl?.textContent?.trim() || '';
+
+                // If no title element, try the link text itself
+                if (!title) {
+                    title = link.textContent?.trim() || '';
+                }
+
+                // Get image
+                const img = link.querySelector('img') || link.parentElement?.querySelector('img');
+                const imgUrl = img?.src || img?.dataset?.src || '';
+
+                // Get ID from URL
+                const match = href.match(/listing\\/([^/]+)/);
+                const id = match ? match[1] : '';
+
+                // Only include if title starts with a year
+                if (title && title.match(/^\\d{4}/) && imgUrl && id) {
+                    items.push({
+                        title: title,
+                        thumbnail_url: imgUrl,
+                        id: id,
+                        url: href
+                    });
+                }
+            });
+
+            return items;
+        }''')
+
+    try:
+        with sync_playwright() as p:
+            # Launch headless browser
+            print('  Launching browser...')
+            browser = p.chromium.launch(headless=True)
+            context = browser.new_context(
+                user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+            )
+            page = context.new_page()
+
+            # Go to results page
+            print('  Loading BaT auction results page...')
+            page.goto('https://bringatrailer.com/auctions/results/', timeout=60000)
+            page.wait_for_load_state('networkidle', timeout=30000)
+
+            # Click "Show More" button repeatedly to load more cars
+            max_clicks = 20  # Each click loads ~20 more cars
+
+            for click_num in range(max_clicks):
+                # Extract current listings from DOM
+                listings_data = extract_listings_from_dom(page)
+
+                # Parse new listings
+                new_count = 0
+                for item in listings_data:
+                    bat_id = str(item.get('id', ''))
+                    if bat_id and bat_id not in seen_ids:
+                        seen_ids.add(bat_id)
+                        car = parse_bat_listing_item(item)
+                        if car:
+                            all_cars.append(car)
+                            new_count += 1
+
+                print(f'  After click {click_num}: {len(all_cars)} total cars (+{new_count} new)')
+
+                if len(all_cars) >= target_cars:
+                    print(f'  Reached target of {target_cars} cars!')
+                    break
+
+                # Try to click "Show More" button
+                try:
+                    show_more = page.locator('button:has-text("Show More")').first
+                    if show_more.is_visible():
+                        show_more.click()
+                        time.sleep(1.5)  # Wait for new content to load
+                        page.wait_for_load_state('networkidle', timeout=10000)
+                    else:
+                        print('  No more "Show More" button visible')
+                        break
+                except Exception as e:
+                    print(f'  Could not click Show More: {e}')
+                    break
+
+            browser.close()
+
+    except Exception as e:
+        print(f'Playwright error: {e}')
+        print('Falling back to basic scraping...')
+        return scrape_bring_a_trailer()
+
+    print(f'Found {len(all_cars)} total cars from Bring A Trailer (Playwright)')
+    return all_cars
 
 
 def scrape_cars_and_bids():
@@ -343,8 +511,11 @@ def refresh_cache():
     print('Refreshing car cache...')
     global car_cache
 
-    # Load cars from BaT (limited by their site to ~50-100 unique)
-    bat_cars = scrape_bring_a_trailer(max_cars=500)
+    # Load cars from BaT using Playwright for more results
+    if PLAYWRIGHT_AVAILABLE:
+        bat_cars = scrape_bat_with_playwright(target_cars=500)
+    else:
+        bat_cars = scrape_bring_a_trailer(max_cars=500)
     cab_cars = scrape_cars_and_bids()
 
     car_cache['bring_a_trailer'] = bat_cars
@@ -390,8 +561,37 @@ def get_competition_cars(count=10):
 
 
 def normalize_string(s):
-    """Normalize string for comparison."""
-    return re.sub(r'[-\s]+', ' ', s.lower().strip())
+    """Normalize string for comparison - removes punctuation for fuzzy matching.
+
+    Examples:
+        'F-250' -> 'f250'
+        'GT-R' -> 'gtr'
+        '911 Turbo S' -> '911turbos'
+    """
+    # Remove all non-alphanumeric characters and lowercase
+    return re.sub(r'[^a-z0-9]', '', s.lower())
+
+
+def fuzzy_match(user_input, correct_answer):
+    """Check if user input matches correct answer with fuzzy tolerance.
+
+    Handles:
+    - Case insensitivity
+    - Punctuation differences (F-250 vs f250)
+    - Partial matches (both directions)
+    """
+    user_norm = normalize_string(user_input)
+    correct_norm = normalize_string(correct_answer)
+
+    # Exact match after normalization
+    if user_norm == correct_norm:
+        return True
+
+    # Partial match (one contains the other)
+    if correct_norm in user_norm or user_norm in correct_norm:
+        return True
+
+    return False
 
 
 class GameHandler(SimpleHTTPRequestHandler):
@@ -474,13 +674,8 @@ class GameHandler(SimpleHTTPRequestHandler):
             year_points_map = {0: 25, 1: 15, 2: 5}
             year_points = year_points_map.get(year_diff, 0)
 
-            make_correct = normalize_string(make) == normalize_string(car['make'])
-
-            user_model = normalize_string(model)
-            correct_model = normalize_string(car['model'])
-            model_correct = (user_model == correct_model or
-                           correct_model in user_model or
-                           user_model in correct_model)
+            make_correct = fuzzy_match(make, car['make'])
+            model_correct = fuzzy_match(model, car['model'])
 
             # Calculate score
             score = 0

@@ -2,7 +2,7 @@ services:
   - type: web
     name: car-guess-game
     runtime: python
-    buildCommand: ""
+    buildCommand: pip install -r requirements.txt && playwright install chromium && playwright install-deps
     startCommand: python server.py
     envVars:
       - key: PYTHON_VERSION
