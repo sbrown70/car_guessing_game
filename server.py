@@ -114,77 +114,124 @@ def parse_car_title(title):
     return {'year': year, 'make': make, 'model': model}
 
 
-def scrape_bring_a_trailer():
-    """Scrape car data from Bring A Trailer."""
+def extract_bat_data_from_html(html):
+    """Extract car data from BaT HTML page."""
+    marker = 'auctionsCompletedInitialData = '
+    start_idx = html.find(marker)
+
+    if start_idx == -1:
+        return []
+
+    json_start = start_idx + len(marker)
+    brace_count = 0
+    json_end = json_start
+
+    for i, char in enumerate(html[json_start:]):
+        if char == '{':
+            brace_count += 1
+        elif char == '}':
+            brace_count -= 1
+            if brace_count == 0:
+                json_end = json_start + i + 1
+                break
+
+    try:
+        data = json.loads(html[json_start:json_end])
+        return data.get('items', [])
+    except json.JSONDecodeError:
+        return []
+
+
+def scrape_bring_a_trailer(max_cars=500):
+    """Scrape car data from Bring A Trailer using multiple URL variations.
+
+    Args:
+        max_cars: Maximum number of cars to collect
+
+    Note: BaT's embedded data is limited, but we try multiple URLs to maximize variety.
+    """
     try:
         print('Scraping Bring A Trailer...')
-        req = Request('https://bringatrailer.com/auctions/results/', headers=BROWSER_HEADERS)
-        with urlopen(req, timeout=30) as response:
-            html = response.read().decode('utf-8')
+        all_cars = []
+        seen_ids = set()
 
-        # Extract auctionsCompletedInitialData - find the start and then parse JSON properly
-        marker = 'auctionsCompletedInitialData = '
-        start_idx = html.find(marker)
+        # URLs to try - different filters/pages to maximize unique cars
+        urls_to_try = [
+            'https://bringatrailer.com/auctions/results/',
+            'https://bringatrailer.com/auctions/results/?page=2',
+            'https://bringatrailer.com/auctions/results/?page=3',
+            'https://bringatrailer.com/auctions/results/?era=1980s',
+            'https://bringatrailer.com/auctions/results/?era=1990s',
+            'https://bringatrailer.com/auctions/results/?era=2000s',
+            'https://bringatrailer.com/auctions/results/?era=2010s',
+            'https://bringatrailer.com/auctions/results/?era=1970s',
+            'https://bringatrailer.com/auctions/results/?era=1960s',
+            'https://bringatrailer.com/auctions/results/?origin=american',
+            'https://bringatrailer.com/auctions/results/?origin=japanese',
+            'https://bringatrailer.com/auctions/results/?origin=german',
+            'https://bringatrailer.com/auctions/results/?origin=british',
+            'https://bringatrailer.com/auctions/results/?origin=italian',
+        ]
 
-        if start_idx == -1:
-            print('Could not find BaT data marker in page')
-            return []
+        for url in urls_to_try:
+            if len(all_cars) >= max_cars:
+                break
 
-        # Find the JSON object by tracking braces
-        json_start = start_idx + len(marker)
-        brace_count = 0
-        json_end = json_start
+            try:
+                req = Request(url, headers=BROWSER_HEADERS)
+                with urlopen(req, timeout=30) as response:
+                    html = response.read().decode('utf-8')
 
-        for i, char in enumerate(html[json_start:]):
-            if char == '{':
-                brace_count += 1
-            elif char == '}':
-                brace_count -= 1
-                if brace_count == 0:
-                    json_end = json_start + i + 1
-                    break
+                listings = extract_bat_data_from_html(html)
 
-        json_str = html[json_start:json_end]
+                # Parse and dedupe
+                new_count = 0
+                for item in listings:
+                    bat_id = item.get('id', '')
+                    if bat_id and bat_id not in seen_ids:
+                        seen_ids.add(bat_id)
+                        car = parse_bat_listing_item(item)
+                        if car:
+                            all_cars.append(car)
+                            new_count += 1
 
-        try:
-            data = json.loads(json_str)
-        except json.JSONDecodeError as e:
-            print(f'JSON parse error: {e}')
-            # Try to extract just the items array
-            items_match = re.search(r'"items"\s*:\s*(\[[\s\S]*?\])\s*[,}]', json_str)
-            if items_match:
-                data = {'items': json.loads(items_match.group(1))}
-            else:
-                return []
+                if new_count > 0:
+                    print(f'  {url.split("?")[-1] if "?" in url else "base"}: +{new_count} new (total: {len(all_cars)})')
 
-        listings = data.get('items', [])
+                time.sleep(0.2)
 
-        cars = []
-        for item in listings:
-            title = item.get('title', '')
-            parsed = parse_car_title(title)
+            except Exception as e:
+                print(f'  Error fetching {url}: {e}')
 
-            if parsed and item.get('thumbnail_url'):
-                image_url = re.sub(r'\?resize=\d+%2C\d+', '?resize=800%2C600', item['thumbnail_url'])
-                # Use stable ID based on BaT's own ID
-                bat_id = item.get('id', '') or str(hash(title))[:8]
-                cars.append({
-                    'id': f"bat-{bat_id}",
-                    'source': 'Bring A Trailer',
-                    'title': title,
-                    'year': parsed['year'],
-                    'make': parsed['make'],
-                    'model': parsed['model'],
-                    'imageUrl': image_url,
-                    'auctionUrl': item.get('url', '')
-                })
-
-        print(f'Found {len(cars)} cars from Bring A Trailer')
-        return cars
+        print(f'Found {len(all_cars)} unique cars from Bring A Trailer')
+        return all_cars
 
     except Exception as e:
         print(f'Error scraping BaT: {e}')
         return []
+
+
+def parse_bat_listing_item(item):
+    """Parse a single BaT listing item into a car object."""
+    title = item.get('title', '')
+    parsed = parse_car_title(title)
+
+    if not parsed or not item.get('thumbnail_url'):
+        return None
+
+    image_url = re.sub(r'\?resize=\d+%2C\d+', '?resize=800%2C600', item['thumbnail_url'])
+    bat_id = item.get('id', '') or str(hash(title))[:8]
+
+    return {
+        'id': f"bat-{bat_id}",
+        'source': 'Bring A Trailer',
+        'title': title,
+        'year': parsed['year'],
+        'make': parsed['make'],
+        'model': parsed['model'],
+        'imageUrl': image_url,
+        'auctionUrl': item.get('url', '')
+    }
 
 
 def scrape_cars_and_bids():
@@ -296,7 +343,8 @@ def refresh_cache():
     print('Refreshing car cache...')
     global car_cache
 
-    bat_cars = scrape_bring_a_trailer()
+    # Load cars from BaT (limited by their site to ~50-100 unique)
+    bat_cars = scrape_bring_a_trailer(max_cars=500)
     cab_cars = scrape_cars_and_bids()
 
     car_cache['bring_a_trailer'] = bat_cars
@@ -490,7 +538,7 @@ class GameHandler(SimpleHTTPRequestHandler):
 
     def log_message(self, format, *args):
         """Custom log format."""
-        if '/api/' in args[0]:
+        if args and isinstance(args[0], str) and '/api/' in args[0]:
             print(f"[{datetime.now().strftime('%H:%M:%S')}] {args[0]}")
 
 

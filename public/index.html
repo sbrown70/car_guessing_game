@@ -406,6 +406,84 @@
       background: rgba(255, 255, 255, 0.2);
     }
 
+    /* Instructions */
+    .instructions {
+      background: rgba(255, 255, 255, 0.05);
+      border-radius: 16px;
+      padding: 25px;
+      margin-bottom: 25px;
+      text-align: center;
+    }
+
+    .instructions h2 {
+      font-size: 1.5rem;
+      margin-bottom: 10px;
+      color: #00d4ff;
+    }
+
+    .instructions > p {
+      color: #a0a0a0;
+      margin-bottom: 20px;
+    }
+
+    .scoring-info {
+      background: rgba(0, 0, 0, 0.2);
+      border-radius: 12px;
+      padding: 15px;
+      margin-bottom: 20px;
+    }
+
+    .scoring-info h3 {
+      font-size: 1rem;
+      margin-bottom: 10px;
+      color: #10b981;
+    }
+
+    .score-grid {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 6px 20px;
+      font-size: 0.9rem;
+      text-align: left;
+      max-width: 200px;
+      margin: 0 auto;
+    }
+
+    .score-grid span:nth-child(odd) {
+      color: #a0a0a0;
+    }
+
+    .score-grid span:nth-child(even) {
+      color: #fff;
+      font-weight: 600;
+      text-align: right;
+    }
+
+    .mode-info {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 15px;
+    }
+
+    .mode-card {
+      background: rgba(255, 255, 255, 0.05);
+      border-radius: 10px;
+      padding: 15px;
+      text-align: left;
+    }
+
+    .mode-card h4 {
+      font-size: 1rem;
+      margin-bottom: 8px;
+      color: #fff;
+    }
+
+    .mode-card p {
+      font-size: 0.85rem;
+      color: #a0a0a0;
+      line-height: 1.4;
+    }
+
     /* Responsive */
     @media (max-width: 600px) {
       h1 {
@@ -424,6 +502,14 @@
       .score-breakdown {
         grid-template-columns: 1fr;
       }
+
+      .mode-info {
+        grid-template-columns: 1fr;
+      }
+
+      .instructions {
+        padding: 20px 15px;
+      }
     }
   </style>
 </head>
@@ -437,6 +523,35 @@
     <div class="status-bar">
       <span class="car-count">Loading cars...</span>
       <button class="refresh-btn" onclick="refreshCars()">Refresh</button>
+    </div>
+
+    <!-- Instructions -->
+    <div id="instructions" class="instructions">
+      <h2>How to Play</h2>
+      <p>You'll see a photo from a real car auction. Guess the <strong>Year</strong>, <strong>Make</strong>, and <strong>Model</strong>!</p>
+
+      <div class="scoring-info">
+        <h3>Scoring</h3>
+        <div class="score-grid">
+          <span>Make correct</span><span>10 pts</span>
+          <span>Year exact</span><span>25 pts</span>
+          <span>Year ±1</span><span>15 pts</span>
+          <span>Year ±2</span><span>5 pts</span>
+          <span>Model correct</span><span>50 pts</span>
+          <span>Perfect bonus</span><span>+25 pts</span>
+        </div>
+      </div>
+
+      <div class="mode-info">
+        <div class="mode-card">
+          <h4>Free Play</h4>
+          <p>Practice with unlimited random cars. No pressure, just fun!</p>
+        </div>
+        <div class="mode-card">
+          <h4>Competition</h4>
+          <p>10 cars, unique makes/models. Max score: 1,100 pts. How high can you go?</p>
+        </div>
+      </div>
     </div>
 
     <!-- Mode Selection -->
